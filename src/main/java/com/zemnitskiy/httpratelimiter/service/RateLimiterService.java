@@ -18,7 +18,7 @@ public class RateLimiterService {
 
   public boolean isAllowed(String clientKey) {
     RateLimiterStrategy rateLimiter = clients.computeIfAbsent(clientKey,
-        _ -> strategyFactory.createStrategy());
+        _ -> strategyFactory.createStrategy(clientKey));
     return rateLimiter.allowRequest();
   }
 }

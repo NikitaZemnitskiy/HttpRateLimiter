@@ -11,6 +11,7 @@ public class RedisConfig {
   @Bean
   public JedisPool jedisPool() {
     JedisPoolConfig poolConfig = new JedisPoolConfig();
+    poolConfig.setJmxEnabled(false);
     poolConfig.setMaxTotal(128);
     poolConfig.setMaxIdle(128);
     poolConfig.setMinIdle(16);

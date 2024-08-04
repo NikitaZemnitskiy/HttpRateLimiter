@@ -1,16 +1,21 @@
 package com.zemnitskiy.httpratelimiter.strategy;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.zemnitskiy.httpratelimiter.utils.Utils;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
-import java.util.concurrent.*;
 import org.springframework.test.context.ActiveProfiles;
-
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -20,12 +25,14 @@ public class SlidingWindowRateLimiterTest {
   private int maxRequests;
 
   @Value("${basePeriod}")
+  private String periodInSeconds;
   private long period;
 
   private SlidingWindowRateLimiter slidingWindowRateLimiter;
 
   @BeforeEach
   public void setUp() {
+    period = Utils.getBasePeriod(periodInSeconds);
     slidingWindowRateLimiter = new SlidingWindowRateLimiter(maxRequests, period);
   }
 
@@ -68,7 +75,7 @@ public class SlidingWindowRateLimiterTest {
     }
 
     executor.shutdown();
-    executor.awaitTermination(1, TimeUnit.MINUTES);
+    var _ = executor.awaitTermination(1, TimeUnit.MINUTES);
 
     int allowedRequestsCount = 0;
     for (Future<Boolean> result : results) {

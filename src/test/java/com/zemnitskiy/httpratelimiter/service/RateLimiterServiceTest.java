@@ -3,6 +3,7 @@ package com.zemnitskiy.httpratelimiter.service;
 import com.zemnitskiy.httpratelimiter.strategy.FixedWindowRateLimiter;
 import com.zemnitskiy.httpratelimiter.strategy.RateLimiterStrategyFactory;
 import com.zemnitskiy.httpratelimiter.strategy.SlidingWindowRateLimiter;
+import com.zemnitskiy.httpratelimiter.utils.Utils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
@@ -14,6 +15,7 @@ import org.springframework.test.context.ActiveProfiles;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
+import org.springframework.test.context.event.annotation.BeforeTestExecution;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
@@ -31,7 +33,14 @@ public class RateLimiterServiceTest {
   private int maxRequests;
 
   @Value("${basePeriod}")
+  private String periodInSeconds;
   private long period;
+
+
+  @BeforeTestExecution
+  public void init() {
+    period = Utils.getBasePeriod(periodInSeconds);
+  }
 
   @BeforeEach
   public void setUp() {
@@ -42,9 +51,9 @@ public class RateLimiterServiceTest {
   @Test
   public void testFixedWindowRateLimiter_ThreadSafety()
       throws InterruptedException, ExecutionException {
-    when(strategyFactory.createStrategy()).thenReturn(createFixedWindowRateLimiter());
-
     String clientKey = "client4";
+    when(strategyFactory.createStrategy(clientKey)).thenReturn(createFixedWindowRateLimiter());
+
     int totalRequests = 20;
     int numberOfThreads = 5;
     ExecutorService executor = Executors.newFixedThreadPool(numberOfThreads);
@@ -72,11 +81,11 @@ public class RateLimiterServiceTest {
   @Test
   public void testSlidingWindowRateLimiter_ThreadSafety()
       throws InterruptedException, ExecutionException {
-    when(strategyFactory.createStrategy()).thenReturn(createSlidingWindowRateLimiter());
-
     String clientKey = "client4";
-    int totalRequests = 20;
-    int numberOfThreads = 5;
+    when(strategyFactory.createStrategy(clientKey)).thenReturn(createSlidingWindowRateLimiter());
+
+    int totalRequests = 2000;
+    int numberOfThreads = 20;
     ExecutorService executor = Executors.newFixedThreadPool(numberOfThreads);
     List<Future<Boolean>> results = new ArrayList<>();
 

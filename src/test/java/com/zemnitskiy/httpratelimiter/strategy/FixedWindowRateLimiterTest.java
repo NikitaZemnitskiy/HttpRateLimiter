@@ -1,7 +1,10 @@
 package com.zemnitskiy.httpratelimiter.strategy;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.zemnitskiy.httpratelimiter.utils.Utils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -23,12 +26,16 @@ public class FixedWindowRateLimiterTest {
   private int maxRequests;
 
   @Value("${basePeriod}")
+  private String periodInSeconds;
+
   private long period;
+
 
   private FixedWindowRateLimiter fixedWindowRateLimiter;
 
   @BeforeEach
   public void setUp() {
+    period = Utils.getBasePeriod(periodInSeconds);
     fixedWindowRateLimiter = new FixedWindowRateLimiter(maxRequests, period);
   }
 
@@ -61,7 +68,7 @@ public class FixedWindowRateLimiterTest {
 
   @Test
   public void testThreadSafety() throws InterruptedException, ExecutionException {
-    int totalRequests = maxRequests*2;
+    int totalRequests = maxRequests * 2;
     int numberOfThreads = 5;
     ExecutorService executor = Executors.newFixedThreadPool(numberOfThreads);
     List<Future<Boolean>> results = new ArrayList<>();

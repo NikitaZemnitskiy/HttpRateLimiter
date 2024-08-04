@@ -1,8 +1,8 @@
 package com.zemnitskiy.httpratelimiter.regression;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.zemnitskiy.httpratelimiter.utils.Utils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -34,7 +34,7 @@ public class RateSlidingLimiterRegressionTest {
   private TestRestTemplate restTemplate;
 
   @Value("${basePeriod}")
-  private long basePeriod;
+  private String basePeriod;
 
   @Value("${baseMaxRequestsPerPeriod}")
   private int baseMaxRequestsPerPeriod;
@@ -47,13 +47,14 @@ public class RateSlidingLimiterRegressionTest {
   public void testSlidingWindowBehaviorThreadSafety()
       throws InterruptedException, ExecutionException {
     String url = "http://localhost:" + port + "/test";
+    long period = Utils.getBasePeriod(basePeriod);
 
     var time = System.currentTimeMillis();
 
     int concurrentThreads = 100;
     ExecutorService executorService = Executors.newFixedThreadPool(concurrentThreads);
     ExecutorService executorService2 = Executors.newFixedThreadPool(concurrentThreads);
-    int sleepTime = (int) ((basePeriod / 1000000000L) / baseMaxRequestsPerPeriod);
+    int sleepTime = (int) ((period / 1000000000L) / baseMaxRequestsPerPeriod);
 
     List<Future<ResponseEntity<String>>> futures = new ArrayList<>();
     List<Future<ResponseEntity<String>>> futures2 = new ArrayList<>();
@@ -98,8 +99,8 @@ public class RateSlidingLimiterRegressionTest {
 
     executorService.shutdown();
     executorService2.shutdown();
-    executorService.awaitTermination(1, TimeUnit.MINUTES);
-    executorService2.awaitTermination(1, TimeUnit.MINUTES);
+    var _ = executorService.awaitTermination(1, TimeUnit.MINUTES);
+    var _ = executorService2.awaitTermination(1, TimeUnit.MINUTES);
 
     System.out.println("Завершено за " + (System.currentTimeMillis() - time));
   }
