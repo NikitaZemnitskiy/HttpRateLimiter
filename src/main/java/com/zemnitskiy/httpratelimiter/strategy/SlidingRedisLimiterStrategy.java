@@ -1,39 +1,60 @@
 package com.zemnitskiy.httpratelimiter.strategy;
 
-import com.zemnitskiy.httpratelimiter.service.CacheService;
-import java.util.concurrent.atomic.AtomicInteger;
+import com.zemnitskiy.httpratelimiter.exception.RateLimitExceededException;
+import jakarta.annotation.PostConstruct;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
+import org.springframework.data.redis.connection.ReturnType;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.stereotype.Component;
 
+@Profile("slidingWindowRedisRateLimiter")
+@Component
 public final class SlidingRedisLimiterStrategy implements RateLimiterStrategy {
 
-  private final long periodInSeconds;
-  private final int maxRequests;
-  private final String redisKey;
-  private final CacheService cacheService;
-  private long oldestElement = 0;
-  AtomicInteger id = new AtomicInteger(0);
+  private final RedisTemplate<String, String> redisTemplate;
 
-  public SlidingRedisLimiterStrategy(int maxRequests, long period,
-      String redisKey, CacheService cacheService) {
-    this.periodInSeconds = period / 1000000000;
-    this.maxRequests = maxRequests;
-    this.redisKey = redisKey;
-    this.cacheService = cacheService;
+  @Value("${baseMaxRequestsPerPeriod}")
+  private int maxRequests;
+
+  @Value("${basePeriod}")
+  private long basePeriod;
+
+  private String luaScript;
+
+  public SlidingRedisLimiterStrategy(RedisTemplate<String, String> redisTemplate) {
+    this.redisTemplate = redisTemplate;
   }
 
-  @Override
-  public boolean allowRequest() {
-    if (oldestElement > System.currentTimeMillis()) {
-      return false;
+  @PostConstruct
+  public void init()  {
+    try (InputStream inputStream = getClass().getClassLoader().getResourceAsStream("rate_limiter.lua")) {
+      if (inputStream == null) {
+        throw new IOException("Lua script not found");
+      }
+      luaScript = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+    } catch (IOException e) {
+      throw new RuntimeException("Failed to load Lua script", e);
     }
-    cacheService.removeExpiredItems(redisKey);
-    if (cacheService.getQueueSize(redisKey) > maxRequests) {
-      oldestElement = (long) cacheService.getOldestElementTTL(redisKey);
-      return false;
-    }
-    if (cacheService.addItemToQueue(redisKey, String.valueOf(id), periodInSeconds, maxRequests)) {
-      id.incrementAndGet();
-      return true;
-    }
-    return false;
   }
+
+  public void allowRequestOrThrowException(String clientKey) {
+
+    Long result = redisTemplate.execute((RedisCallback<Long>) connection ->
+        connection.eval(luaScript.getBytes(),
+            ReturnType.INTEGER,
+            1,
+            clientKey.getBytes(),
+            String.valueOf(maxRequests).getBytes(),
+            String.valueOf(basePeriod).getBytes()
+        ));
+    if (result == null || result != 1) {
+      throw new RateLimitExceededException("Too many requests. You have only " + maxRequests + " requests." + " for " + basePeriod/1000000000 + " seconds");
+    }
+  }
+
 }

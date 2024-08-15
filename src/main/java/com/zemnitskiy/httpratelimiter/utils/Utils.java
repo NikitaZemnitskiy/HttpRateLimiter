@@ -3,7 +3,7 @@ package com.zemnitskiy.httpratelimiter.utils;
 public class Utils {
 
 
-  public static long getBasePeriod(String s) {
+  public static long parseBasePeriod(String s) {
     if (s == null || s.isEmpty()) {
       throw new IllegalArgumentException("Input string cannot be null or empty");
     }

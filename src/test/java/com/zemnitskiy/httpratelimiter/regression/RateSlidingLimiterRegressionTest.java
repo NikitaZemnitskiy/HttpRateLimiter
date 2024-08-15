@@ -47,7 +47,7 @@ public class RateSlidingLimiterRegressionTest {
   public void testSlidingWindowBehaviorThreadSafety()
       throws InterruptedException, ExecutionException {
     String url = "http://localhost:" + port + "/test";
-    long period = Utils.getBasePeriod(basePeriod);
+    long period = Utils.parseBasePeriod(basePeriod);
 
     var time = System.currentTimeMillis();
 

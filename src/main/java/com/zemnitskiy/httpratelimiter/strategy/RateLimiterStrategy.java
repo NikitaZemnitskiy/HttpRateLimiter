@@ -1,7 +1,7 @@
 package com.zemnitskiy.httpratelimiter.strategy;
 
-public sealed interface RateLimiterStrategy permits FixedWindowRateLimiter, SlidingWindowRateLimiter, SlidingRedisLimiterStrategy   {
+public interface RateLimiterStrategy  {
 
-  boolean allowRequest();
+  void allowRequestOrThrowException(String key);
 
 }
