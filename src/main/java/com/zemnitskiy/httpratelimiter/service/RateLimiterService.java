@@ -1,14 +1,14 @@
 package com.zemnitskiy.httpratelimiter.service;
 
 import com.zemnitskiy.httpratelimiter.strategy.RateLimiterStrategy;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 public class RateLimiterService {
 
-  private final Logger slf4jLogger = Logger.getLogger("RateLimiterService");
+  private final Logger log = LoggerFactory.getLogger(RateLimiterService.class);
   private final RateLimiterStrategy rateLimiter;
 
   public RateLimiterService(RateLimiterStrategy rateLimiterStrategy) {
@@ -17,7 +17,7 @@ public class RateLimiterService {
 
   public boolean isAllowed(String clientKey) {
     rateLimiter.allowRequestOrThrowException(clientKey);
-    slf4jLogger.log(Level.INFO, clientKey + "Endpoint access Allowed");
+    log.debug("{}Endpoint access Allowed", clientKey);
     return true;
   }
 }
