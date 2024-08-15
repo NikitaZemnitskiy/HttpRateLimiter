@@ -31,44 +31,26 @@ public final class FixedWindowRateLimiter implements RateLimiterStrategy {
 
   @Override
   public synchronized void allowRequestOrThrowException(String key) {
-    long now = System.nanoTime();
     FixedWindowRateLimiterData currentKeyData = cache.get(key,
         _ -> new FixedWindowRateLimiterData());
 
-    if (now - currentKeyData.getFirstRequestTimeInPeriod() > basePeriod) {
-      currentKeyData.setRequestCount(1);
-      currentKeyData.setFirstRequestTimeInPeriod(now);
+    if (currentKeyData.getRequestCount() < maxRequests) {
+      currentKeyData.increaseRequestCount();
       return;
-    } else {
-      if (currentKeyData.getRequestCount() < maxRequests) {
-        currentKeyData.increaseRequestCount();
-        return;
-      }
     }
 
-    throw new RateLimitExceededException("Too many requests. You have only " + maxRequests + " requests." + " for " + basePeriod/1000000000 + " seconds");
+    throw new RateLimitExceededException(
+        "Too many requests. You have only " + maxRequests + " requests." + " for "
+            + basePeriod / 1000000000 + " seconds");
   }
 }
 
 final class FixedWindowRateLimiterData {
 
-  private long firstRequestTimeInPeriod = 0;
-  private int requestCount = 1;
-
-  public long getFirstRequestTimeInPeriod() {
-    return firstRequestTimeInPeriod;
-  }
+  private int requestCount = 0;
 
   public int getRequestCount() {
     return requestCount;
-  }
-
-  public void setFirstRequestTimeInPeriod(long firstRequestTimeInPeriod) {
-    this.firstRequestTimeInPeriod = firstRequestTimeInPeriod;
-  }
-
-  public void setRequestCount(int requestCount) {
-    this.requestCount = requestCount;
   }
 
   public void increaseRequestCount() {
