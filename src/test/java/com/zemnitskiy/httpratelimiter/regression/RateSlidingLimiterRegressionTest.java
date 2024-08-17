@@ -2,7 +2,6 @@ package com.zemnitskiy.httpratelimiter.regression;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
-import com.zemnitskiy.httpratelimiter.utils.Utils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -47,7 +46,7 @@ public class RateSlidingLimiterRegressionTest {
   public void testSlidingWindowBehaviorThreadSafety()
       throws InterruptedException, ExecutionException {
     String url = "http://localhost:" + port + "/test";
-    long period = Utils.parseBasePeriod(basePeriod);
+    long period = Long.parseLong(basePeriod);
 
     var time = System.currentTimeMillis();
 

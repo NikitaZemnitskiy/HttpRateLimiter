@@ -1,7 +1,7 @@
 package com.zemnitskiy.httpratelimiter.strategy;
 
-public interface RateLimiterStrategy  {
+public interface RateLimiterStrategy {
 
-  void allowRequestOrThrowException(String key);
+  void allowRequest(String key) throws RateLimitExceededException;
 
 }

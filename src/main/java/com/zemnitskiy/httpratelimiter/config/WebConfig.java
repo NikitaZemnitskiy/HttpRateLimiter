@@ -1,4 +1,5 @@
 package com.zemnitskiy.httpratelimiter.config;
+import com.zemnitskiy.httpratelimiter.web.RateLimiterInterceptor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;

@@ -1,8 +1,8 @@
 /*
 package com.zemnitskiy.httpratelimiter.service;
 
-import com.zemnitskiy.httpratelimiter.strategy.FixedWindowRateLimiter;
-import com.zemnitskiy.httpratelimiter.strategy.SlidingWindowRateLimiter;
+import com.zemnitskiy.httpratelimiter.fixedwindow.FixedWindowRateLimiter;
+import com.zemnitskiy.httpratelimiter.slidingwindow.SlidingWindowRateLimiter;
 import com.zemnitskiy.httpratelimiter.utils.Utils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
