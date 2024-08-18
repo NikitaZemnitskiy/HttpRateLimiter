@@ -2,6 +2,7 @@ package com.zemnitskiy.httpratelimiter.regression;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -23,7 +24,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@ActiveProfiles("test")
+@ActiveProfiles("slidingWindowRateLimiter")
 public class RateSlidingLimiterRegressionTest {
 
   @LocalServerPort
@@ -32,10 +33,10 @@ public class RateSlidingLimiterRegressionTest {
   @Autowired
   private TestRestTemplate restTemplate;
 
-  @Value("${basePeriod}")
-  private String basePeriod;
+  @Value("${rateLimiter.basePeriod}")
+  private Duration basePeriod;
 
-  @Value("${baseMaxRequestsPerPeriod}")
+  @Value("${rateLimiter.maxRequestsPerPeriod}")
   private int baseMaxRequestsPerPeriod;
 
   private String generateIp(int i) {
@@ -46,7 +47,7 @@ public class RateSlidingLimiterRegressionTest {
   public void testSlidingWindowBehaviorThreadSafety()
       throws InterruptedException, ExecutionException {
     String url = "http://localhost:" + port + "/test";
-    long period = Long.parseLong(basePeriod);
+    long period = basePeriod.toNanos();
 
     var time = System.currentTimeMillis();
 

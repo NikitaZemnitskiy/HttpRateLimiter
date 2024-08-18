@@ -17,7 +17,7 @@ public class CaffeineConfig {
 
   @Bean
   @Profile("fixedWindowRateLimiter")
-  public Cache<String, AtomicInteger> atomicIntegerCache() {
+  public Cache<String, AtomicInteger> fixedWindowCache() {
     return Caffeine.newBuilder()
         .expireAfterWrite(basePeriod)
         .build();
@@ -25,7 +25,7 @@ public class CaffeineConfig {
 
   @Bean
   @Profile("slidingWindowRateLimiter")
-  public Cache<String, Queue<Long>> longQueueCache() {
+  public Cache<String, Queue<Long>> slidingWindowCache() {
     return Caffeine.newBuilder()
         .expireAfterAccess(basePeriod)
         .build();
@@ -33,7 +33,7 @@ public class CaffeineConfig {
 
   @Bean
   @Profile("slidingWindowRedisRateLimiter")
-  public Cache<String, Long> longCache() {
+  public Cache<String, Long> slidingWindowRedis() {
     return Caffeine.newBuilder()
         .expireAfterAccess(basePeriod)
         .build();
