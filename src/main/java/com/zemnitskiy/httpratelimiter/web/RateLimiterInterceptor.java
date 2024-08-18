@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
+import reactor.util.annotation.NonNull;
 
 
 @Component
@@ -24,8 +25,9 @@ public class RateLimiterInterceptor implements HandlerInterceptor {
   }
 
   @Override
-  public boolean preHandle(HttpServletRequest request, HttpServletResponse response,
-      Object handler) {
+  public boolean preHandle(@NonNull HttpServletRequest request,
+      @NonNull HttpServletResponse response,
+      @NonNull Object handler) {
     String clientKey = clientKeyStrategy.getClientKey(request);
     log.debug("{} Trying access endpoint", clientKey);
     rateLimiter.allowRequest(clientKey);
