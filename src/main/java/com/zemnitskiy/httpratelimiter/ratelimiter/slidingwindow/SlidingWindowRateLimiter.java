@@ -15,6 +15,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 
+/**
+ * The {@code SlidingWindowRateLimiter} class implements a rate limiting strategy using the sliding
+ * window algorithm. It allows a maximum number of requests within a rolling time period, ensuring a
+ * more dynamic control over the request rate.
+ *
+ * <p>This class uses Caffeine cache to store the request timestamps per client key, maintaining the
+ * state of the sliding window.
+ *
+ * <p>The class is final, meaning it cannot be subclassed.
+ */
 public final class SlidingWindowRateLimiter implements RateLimiterStrategy {
 
   @Value("${rateLimiter.maxRequestsPerPeriod}")
@@ -30,10 +40,26 @@ public final class SlidingWindowRateLimiter implements RateLimiterStrategy {
   DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
       .withZone(ZoneId.systemDefault());
 
+  /**
+   * Constructs a new {@code SlidingWindowRateLimiter} with the provided Caffeine cache.
+   *
+   * @param cache the cache to use for storing request timestamps associated with each client key
+   */
   public SlidingWindowRateLimiter(Cache<String, Queue<Long>> cache) {
     this.cache = cache;
   }
 
+  /**
+   * Validates the rate limiter properties after the class has been constructed.
+   *
+   * <p>This method ensures that the {@code maxRequests} is greater than 0 and that
+   * {@code basePeriod} is not null.
+   * It is annotated with {@code @PostConstruct}, meaning it is executed after the dependency
+   * injection is complete.
+   *
+   * @throws IllegalArgumentException if {@code maxRequests} is less than or equal to 0 or if
+   *                                  {@code basePeriod} is null
+   */
   @PostConstruct
   public void validateProperties() {
     if (maxRequests <= 0) {
@@ -44,6 +70,18 @@ public final class SlidingWindowRateLimiter implements RateLimiterStrategy {
     }
   }
 
+  /**
+   * Attempts to allow a request for the given key.
+   *
+   * <p>If the number of requests within the sliding window for the key is below the maximum
+   * allowed,
+   * the request is allowed, and the current timestamp is recorded. If the limit has been reached, a
+   * {@link RateLimitExceededException} is thrown, indicating that the request cannot be processed
+   * until an earlier timestamp falls out of the sliding window.
+   *
+   * @param key the unique key representing the client or request source
+   * @throws RateLimitExceededException if the rate limit for the key has been exceeded
+   */
   @Override
   public void allowRequest(String key) {
     log.trace("Attempting to allow request for key: {}", key);
