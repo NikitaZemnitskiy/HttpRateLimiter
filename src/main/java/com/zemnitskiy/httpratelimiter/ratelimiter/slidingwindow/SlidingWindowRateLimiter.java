@@ -3,6 +3,7 @@ package com.zemnitskiy.httpratelimiter.ratelimiter.slidingwindow;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.zemnitskiy.httpratelimiter.strategy.RateLimitExceededException;
 import com.zemnitskiy.httpratelimiter.strategy.RateLimiterStrategy;
+import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -13,12 +14,7 @@ import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Profile;
-import org.springframework.stereotype.Component;
 
-
-@Component
-@Profile("slidingWindowRateLimiter")
 public final class SlidingWindowRateLimiter implements RateLimiterStrategy {
 
   @Value("${rateLimiter.maxRequestsPerPeriod}")
@@ -36,6 +32,16 @@ public final class SlidingWindowRateLimiter implements RateLimiterStrategy {
 
   public SlidingWindowRateLimiter(Cache<String, Queue<Long>> cache) {
     this.cache = cache;
+  }
+
+  @PostConstruct
+  public void validateProperties() {
+    if (maxRequests <= 0) {
+      throw new IllegalArgumentException("maxRequestsPerPeriod must be greater than 0");
+    }
+    if (basePeriod == null) {
+      throw new IllegalArgumentException("basePeriod must be set");
+    }
   }
 
   @Override
@@ -63,7 +69,8 @@ public final class SlidingWindowRateLimiter implements RateLimiterStrategy {
         return;
       }
 
-      long waitTime = !timestamps.isEmpty() ? (timestamps.peek() - oldestAllowedRequestTime) : 0;
+      @SuppressWarnings("DataFlowIssue")
+      long waitTime = timestamps.peek() - oldestAllowedRequestTime;
       int retryAfterSeconds = (int) TimeUnit.MILLISECONDS.toSeconds(waitTime);
       log.trace("Too many requests for key: {}. Retry after: {} seconds", key, retryAfterSeconds);
 

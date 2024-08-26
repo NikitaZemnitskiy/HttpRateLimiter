@@ -3,6 +3,7 @@ package com.zemnitskiy.httpratelimiter.ratelimiter.slidingwindow;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.zemnitskiy.httpratelimiter.strategy.RateLimitExceededException;
 import com.zemnitskiy.httpratelimiter.strategy.RateLimiterStrategy;
+import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -11,13 +12,9 @@ import java.util.Collections;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
-import org.springframework.stereotype.Component;
 
-@Profile("slidingWindowRedisRateLimiter")
-@Component
 public final class SlidingWindowRedisRateLimiter implements RateLimiterStrategy {
 
   private final RedisTemplate<String, String> redisTemplate;
@@ -40,6 +37,17 @@ public final class SlidingWindowRedisRateLimiter implements RateLimiterStrategy 
     this.redisTemplate = redisTemplate;
     this.cache = cache;
     this.rateLimiterScript = createRateLimiterScript();
+
+  }
+
+  @PostConstruct
+  public void validateProperties() {
+    if (maxRequests <= 0) {
+      throw new IllegalArgumentException("maxRequestsPerPeriod must be greater than 0");
+    }
+    if (basePeriod == null){
+      throw new IllegalArgumentException("basePeriod must be set");
+    }
   }
 
   @Override
@@ -50,7 +58,7 @@ public final class SlidingWindowRedisRateLimiter implements RateLimiterStrategy 
     Long currentTime = System.currentTimeMillis();
     if (cachedRetryTime != null && cachedRetryTime > currentTime) {
       throw new RateLimitExceededException(getExceptionMessage(),
-          (int) (cachedRetryTime - currentTime) / 1000);
+          Math.toIntExact(Math.ceilDiv(cachedRetryTime - currentTime, 1000)));
     }
     Long result = redisTemplate.execute(rateLimiterScript,
         Collections.singletonList(clientKey),

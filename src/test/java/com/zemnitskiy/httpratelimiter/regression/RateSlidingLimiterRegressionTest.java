@@ -1,30 +1,25 @@
 package com.zemnitskiy.httpratelimiter.regression;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@ActiveProfiles("slidingWindowRateLimiter")
 public class RateSlidingLimiterRegressionTest {
 
   @LocalServerPort
@@ -33,76 +28,65 @@ public class RateSlidingLimiterRegressionTest {
   @Autowired
   private TestRestTemplate restTemplate;
 
-  @Value("${rateLimiter.basePeriod}")
-  private Duration basePeriod;
+  private static final Duration basePeriod = Duration.ofSeconds(10);
+  private static final int maxRequestPerPeriod = 5;
 
-  @Value("${rateLimiter.maxRequestsPerPeriod}")
-  private int baseMaxRequestsPerPeriod;
-
-  private String generateIp(int i) {
-    return "192.168.0." + i;
+  @DynamicPropertySource
+  private static void registerRedisProperties(DynamicPropertyRegistry registry) {
+    registry.add("rateLimiter.mode", () -> "slidingWindowRateLimiter");
+    registry.add("rateLimiter.maxRequestsPerPeriod", () -> maxRequestPerPeriod);
+    registry.add("rateLimiter.basePeriod", () -> basePeriod);
   }
 
   @Test
   public void testSlidingWindowBehaviorThreadSafety()
-      throws InterruptedException, ExecutionException {
+      throws InterruptedException {
     String url = "http://localhost:" + port + "/test";
-    long period = basePeriod.toNanos();
 
-    var time = System.currentTimeMillis();
+    int numberOfThreads = 1000;
+    ExecutorService executor = Executors.newFixedThreadPool(numberOfThreads);
 
-    int concurrentThreads = 100;
-    ExecutorService executorService = Executors.newFixedThreadPool(concurrentThreads);
-    ExecutorService executorService2 = Executors.newFixedThreadPool(concurrentThreads);
-    int sleepTime = (int) ((period / 1000000000L) / baseMaxRequestsPerPeriod);
+    AtomicInteger successfulRequests = new AtomicInteger(0);
 
-    List<Future<ResponseEntity<String>>> futures = new ArrayList<>();
-    List<Future<ResponseEntity<String>>> futures2 = new ArrayList<>();
-
-    for (int i = 0; i < concurrentThreads * baseMaxRequestsPerPeriod; i++) {
-      int finalI = i;
-      futures.add(executorService.submit(() -> {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("X-Forwarded-For", generateIp(finalI));
-        HttpEntity<String> entity = new HttpEntity<>(headers);
-        return restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-      }));
+    for (int i = 0; i < maxRequestPerPeriod; i++) {
+      HttpHeaders headers = new HttpHeaders();
+      headers.set("X-Forwarded-For", "client1");
+      HttpEntity<String> entity = new HttpEntity<>(headers);
+      restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+      TimeUnit.SECONDS.sleep(basePeriod.toSeconds() / maxRequestPerPeriod);
     }
 
-    TimeUnit.SECONDS.sleep(sleepTime);
+    for (int i = 0; i < numberOfThreads; i++) {
+      executor.submit(() -> {
+            for (int j = 0; j < maxRequestPerPeriod; j++) {
+              HttpHeaders headers = new HttpHeaders();
+              headers.set("X-Forwarded-For", "client1");
+              HttpEntity<String> entity = new HttpEntity<>(headers);
+              var firstResponse = restTemplate.exchange(url, HttpMethod.GET, entity, String.class)
+                  .getStatusCode();
+              if (firstResponse.is2xxSuccessful()) {
+                successfulRequests.incrementAndGet();
+              }
+              var secondResponse = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+              if (secondResponse.getStatusCode().is2xxSuccessful()) {
+                fail("To much accepted request");
+              }
+              try {
+                TimeUnit.SECONDS.sleep(basePeriod.toSeconds() / maxRequestPerPeriod);
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+              }
+            }
+          }
+      );
 
-    for (int i = 0; i < concurrentThreads * baseMaxRequestsPerPeriod; i++) {
-      int finalI = i;
-      futures2.add(executorService2.submit(() -> {
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("X-Forwarded-For", generateIp(finalI));
-        HttpEntity<String> entity = new HttpEntity<>(headers);
-        return restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-      }));
     }
 
-    for (Future<ResponseEntity<String>> future : futures) {
-      ResponseEntity<String> response = future.get();
-      assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-    }
-    futures.clear();
+    executor.shutdown();
+    var _ = executor.awaitTermination(1, TimeUnit.MINUTES);
 
-    for (Future<ResponseEntity<String>> future : futures2) {
-      ResponseEntity<String> response = future.get();
-      if (futures.indexOf(future) < concurrentThreads) {
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-      } else {
-        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
-      }
-    }
-    futures2.clear();
-
-    executorService.shutdown();
-    executorService2.shutdown();
-    var _ = executorService.awaitTermination(1, TimeUnit.MINUTES);
-    var _ = executorService2.awaitTermination(1, TimeUnit.MINUTES);
-
-    System.out.println("Завершено за " + (System.currentTimeMillis() - time));
+    assertEquals(maxRequestPerPeriod, successfulRequests.get(),
+        "Only up to maxRequests should be allowed in a given sliding window period.");
   }
 
 }
