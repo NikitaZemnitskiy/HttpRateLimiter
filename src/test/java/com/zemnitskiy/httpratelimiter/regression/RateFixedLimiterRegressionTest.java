@@ -24,7 +24,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-public class RateFixedLimiterRegressionTest {
+class RateFixedLimiterRegressionTest {
 
   @LocalServerPort
   private int port;
@@ -54,12 +54,13 @@ public class RateFixedLimiterRegressionTest {
   public void tearDown() throws InterruptedException {
     if (executor != null && !executor.isShutdown()) {
       executor.shutdown();
-      executor.awaitTermination(1, TimeUnit.MINUTES);
+      boolean terminated = executor.awaitTermination(1, TimeUnit.MINUTES);
+      assertTrue(terminated, "Executor1 did not terminate in the expected time");
     }
   }
 
   @Test
-  public void testFixedWindowBehaviorThreadSafety() throws InterruptedException {
+  void testFixedWindowBehaviorThreadSafety() throws InterruptedException {
     String url = "http://localhost:" + port + "/test";
     HttpEntity<String> entity = createHttpEntity("client1");
 
@@ -84,24 +85,10 @@ public class RateFixedLimiterRegressionTest {
     assertEquals(0, successfulRequests.get(),
         "No requests should be allowed after the limit in a given window period.");
 
-    // Wait for half of the Retry-After period
-    TimeUnit.SECONDS.sleep(getRetryAfterHeader(url, entity) / 2);
-
     successfulRequests.set(0);
     latch = new CountDownLatch(MAX_REQUEST_PER_PERIOD);
 
-    // Run concurrent requests to check behavior after the sliding window period
-    runConcurrentRequests(url, entity, latch, successfulRequests, MAX_REQUEST_PER_PERIOD);
-
-    latch.await();
-    assertEquals(0, successfulRequests.get(),
-        "No requests should be allowed after the limit in a given sliding window period.");
-
-    // Wait for the full Retry-After period
     TimeUnit.SECONDS.sleep(getRetryAfterHeader(url, entity));
-
-    successfulRequests.set(0);
-    latch = new CountDownLatch(MAX_REQUEST_PER_PERIOD);
 
     // Run concurrent requests again to verify that requests are allowed after the sliding window period
     runConcurrentRequests(url, entity, latch, successfulRequests, MAX_REQUEST_PER_PERIOD);

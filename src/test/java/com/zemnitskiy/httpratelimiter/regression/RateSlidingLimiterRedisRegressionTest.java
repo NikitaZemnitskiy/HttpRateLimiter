@@ -32,7 +32,7 @@ import org.testcontainers.utility.DockerImageName;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
-public class RateSlidingLimiterRedisRegressionTest {
+class RateSlidingLimiterRedisRegressionTest {
 
   @Container
   private static final RedisContainer REDIS_CONTAINER =
@@ -48,16 +48,16 @@ public class RateSlidingLimiterRedisRegressionTest {
   @LocalServerPort
   private int port;
 
-  private static final Duration basePeriod = Duration.ofSeconds(10);
-  private static final int maxRequestPerPeriod = 5;
+  private static final Duration BASE_PERIOD = Duration.ofSeconds(10);
+  private static final int MAX_REQUEST_PER_PERIOD = 5;
 
   @DynamicPropertySource
   private static void registerRedisProperties(DynamicPropertyRegistry registry) {
     registry.add("spring.data.redis.host", REDIS_CONTAINER::getHost);
     registry.add("spring.data.redis.port", () -> REDIS_CONTAINER.getMappedPort(6379).toString());
     registry.add("rateLimiter.mode", () -> "slidingWindowRedisRateLimiter");
-    registry.add("rateLimiter.maxRequestsPerPeriod", () -> maxRequestPerPeriod);
-    registry.add("rateLimiter.basePeriod", () -> basePeriod);
+    registry.add("rateLimiter.maxRequestsPerPeriod", () -> MAX_REQUEST_PER_PERIOD);
+    registry.add("rateLimiter.basePeriod", () -> BASE_PERIOD);
   }
 
   @BeforeEach
@@ -71,7 +71,7 @@ public class RateSlidingLimiterRedisRegressionTest {
   }
 
   @Test
-  public void givenSingleRequest_whenCheckingRedisEntry_thenEntryIsCreated() {
+  void givenSingleRequest_whenCheckingRedisEntry_thenEntryIsCreated() {
     String url = "http://localhost:" + port + "/test";
     HttpHeaders headers = new HttpHeaders();
     headers.set("X-Forwarded-For", "192.168.0.1");
@@ -92,7 +92,7 @@ public class RateSlidingLimiterRedisRegressionTest {
     headers.set("X-Forwarded-For", "192.168.0.1");
     HttpEntity<String> entity = new HttpEntity<>(headers);
 
-    for (int i = 0; i < maxRequestPerPeriod*100; i++) {
+    for (int i = 0; i < MAX_REQUEST_PER_PERIOD * 100; i++) {
       restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
     }
 
@@ -100,21 +100,23 @@ public class RateSlidingLimiterRedisRegressionTest {
     Long redisEntriesCount = redisTemplate.opsForZSet().zCard(redisKey);
 
     assertNotNull(redisEntriesCount);
-    assertEquals(maxRequestPerPeriod, redisEntriesCount.intValue(), "Redis should store only 5 entries.");
+    assertEquals(MAX_REQUEST_PER_PERIOD, redisEntriesCount.intValue(),
+        "Redis should store only 5 entries.");
   }
 
   @Test
-  public void givenMultipleRequestsAndWaiting_whenAddingOneMore_thenOnlyOneEntryRemainsInRedis() throws InterruptedException {
+  void givenMultipleRequestsAndWaiting_whenAddingOneMore_thenOnlyOneEntryRemainsInRedis()
+      throws InterruptedException {
     String url = "http://localhost:" + port + "/test";
     HttpHeaders headers = new HttpHeaders();
     headers.set("X-Forwarded-For", "192.168.0.1");
     HttpEntity<String> entity = new HttpEntity<>(headers);
 
-    for (int i = 0; i < maxRequestPerPeriod; i++) {
+    for (int i = 0; i < MAX_REQUEST_PER_PERIOD; i++) {
       restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
     }
 
-    TimeUnit.SECONDS.sleep(basePeriod.toSeconds());
+    TimeUnit.SECONDS.sleep(BASE_PERIOD.toSeconds());
 
     restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
 
@@ -126,7 +128,7 @@ public class RateSlidingLimiterRedisRegressionTest {
   }
 
   @Test
-  public void testSlidingWindowBehaviorThreadSafety()
+  void testSlidingWindowBehaviorThreadSafety()
       throws InterruptedException {
     String url = "http://localhost:" + port + "/test";
 
@@ -135,17 +137,17 @@ public class RateSlidingLimiterRedisRegressionTest {
 
     AtomicInteger successfulRequests = new AtomicInteger(0);
 
-    for (int i = 0; i < maxRequestPerPeriod; i++) {
+    for (int i = 0; i < MAX_REQUEST_PER_PERIOD; i++) {
       HttpHeaders headers = new HttpHeaders();
       headers.set("X-Forwarded-For", "client1");
       HttpEntity<String> entity = new HttpEntity<>(headers);
       restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-      TimeUnit.SECONDS.sleep(basePeriod.toSeconds() / maxRequestPerPeriod);
+      TimeUnit.SECONDS.sleep(BASE_PERIOD.toSeconds() / MAX_REQUEST_PER_PERIOD);
     }
 
     for (int i = 0; i < numberOfThreads; i++) {
       executor.submit(() -> {
-            for (int j = 0; j < maxRequestPerPeriod; j++) {
+            for (int j = 0; j < MAX_REQUEST_PER_PERIOD; j++) {
               HttpHeaders headers = new HttpHeaders();
               headers.set("X-Forwarded-For", "client1");
               HttpEntity<String> entity = new HttpEntity<>(headers);
@@ -159,7 +161,7 @@ public class RateSlidingLimiterRedisRegressionTest {
                 Assertions.fail("To much accepted request");
               }
               try {
-                TimeUnit.SECONDS.sleep(basePeriod.toSeconds() / maxRequestPerPeriod);
+                TimeUnit.SECONDS.sleep(BASE_PERIOD.toSeconds() / MAX_REQUEST_PER_PERIOD);
               } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
               }
@@ -169,9 +171,10 @@ public class RateSlidingLimiterRedisRegressionTest {
     }
 
     executor.shutdown();
-    var _ = executor.awaitTermination(1, TimeUnit.MINUTES);
+    boolean terminated = executor.awaitTermination(1, TimeUnit.MINUTES);
+    assertTrue(terminated, "Executor did not terminate in the expected time");
 
-    assertEquals(maxRequestPerPeriod, successfulRequests.get(),
+    assertEquals(MAX_REQUEST_PER_PERIOD, successfulRequests.get(),
         "Only up to maxRequests should be allowed in a given sliding window period.");
   }
 

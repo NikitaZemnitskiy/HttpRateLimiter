@@ -1,6 +1,7 @@
 package com.zemnitskiy.httpratelimiter.regression;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.time.Duration;
@@ -20,7 +21,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-public class RateSlidingLimiterRegressionTest {
+class RateSlidingLimiterRegressionTest {
 
   @LocalServerPort
   private int port;
@@ -28,18 +29,18 @@ public class RateSlidingLimiterRegressionTest {
   @Autowired
   private TestRestTemplate restTemplate;
 
-  private static final Duration basePeriod = Duration.ofSeconds(10);
-  private static final int maxRequestPerPeriod = 5;
+  private static final Duration BASE_PERIOD = Duration.ofSeconds(10);
+  private static final int MAX_REQUEST_PER_PERIOD = 5;
 
   @DynamicPropertySource
   private static void registerRedisProperties(DynamicPropertyRegistry registry) {
     registry.add("rateLimiter.mode", () -> "slidingWindowRateLimiter");
-    registry.add("rateLimiter.maxRequestsPerPeriod", () -> maxRequestPerPeriod);
-    registry.add("rateLimiter.basePeriod", () -> basePeriod);
+    registry.add("rateLimiter.maxRequestsPerPeriod", () -> MAX_REQUEST_PER_PERIOD);
+    registry.add("rateLimiter.basePeriod", () -> BASE_PERIOD);
   }
 
   @Test
-  public void testSlidingWindowBehaviorThreadSafety()
+  void testSlidingWindowBehaviorThreadSafety()
       throws InterruptedException {
     String url = "http://localhost:" + port + "/test";
 
@@ -48,17 +49,17 @@ public class RateSlidingLimiterRegressionTest {
 
     AtomicInteger successfulRequests = new AtomicInteger(0);
 
-    for (int i = 0; i < maxRequestPerPeriod; i++) {
+    for (int i = 0; i < MAX_REQUEST_PER_PERIOD; i++) {
       HttpHeaders headers = new HttpHeaders();
       headers.set("X-Forwarded-For", "client1");
       HttpEntity<String> entity = new HttpEntity<>(headers);
       restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-      TimeUnit.SECONDS.sleep(basePeriod.toSeconds() / maxRequestPerPeriod);
+      TimeUnit.SECONDS.sleep(BASE_PERIOD.toSeconds() / MAX_REQUEST_PER_PERIOD);
     }
 
     for (int i = 0; i < numberOfThreads; i++) {
       executor.submit(() -> {
-            for (int j = 0; j < maxRequestPerPeriod; j++) {
+            for (int j = 0; j < MAX_REQUEST_PER_PERIOD; j++) {
               HttpHeaders headers = new HttpHeaders();
               headers.set("X-Forwarded-For", "client1");
               HttpEntity<String> entity = new HttpEntity<>(headers);
@@ -72,7 +73,7 @@ public class RateSlidingLimiterRegressionTest {
                 fail("To much accepted request");
               }
               try {
-                TimeUnit.SECONDS.sleep(basePeriod.toSeconds() / maxRequestPerPeriod);
+                TimeUnit.SECONDS.sleep(BASE_PERIOD.toSeconds() / MAX_REQUEST_PER_PERIOD);
               } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
               }
@@ -83,9 +84,11 @@ public class RateSlidingLimiterRegressionTest {
     }
 
     executor.shutdown();
-    var _ = executor.awaitTermination(1, TimeUnit.MINUTES);
 
-    assertEquals(maxRequestPerPeriod, successfulRequests.get(),
+    boolean terminated = executor.awaitTermination(1, TimeUnit.MINUTES);
+    assertTrue(terminated, "Executor1 did not terminate in the expected time");
+
+    assertEquals(MAX_REQUEST_PER_PERIOD, successfulRequests.get(),
         "Only up to maxRequests should be allowed in a given sliding window period.");
   }
 

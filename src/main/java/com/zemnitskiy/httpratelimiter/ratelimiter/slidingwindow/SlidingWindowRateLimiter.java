@@ -1,9 +1,9 @@
 package com.zemnitskiy.httpratelimiter.ratelimiter.slidingwindow;
 
 import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.zemnitskiy.httpratelimiter.strategy.RateLimitExceededException;
 import com.zemnitskiy.httpratelimiter.strategy.RateLimiterStrategy;
-import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -13,25 +13,20 @@ import java.util.Queue;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 
 /**
  * The {@code SlidingWindowRateLimiter} class implements a rate limiting strategy using the sliding
  * window algorithm. It allows a maximum number of requests within a rolling time period, ensuring a
  * more dynamic control over the request rate.
  *
- * <p>This class uses Caffeine cache to store the request timestamps per client key, maintaining the
- * state of the sliding window.
- *
- * <p>The class is final, meaning it cannot be subclassed.
+ * <p>This class uses Caffeine cache to store the request timestamps per client key, maintaining
+ * the state of the sliding window.`
  */
 public final class SlidingWindowRateLimiter implements RateLimiterStrategy {
 
-  @Value("${rateLimiter.maxRequestsPerPeriod}")
-  private int maxRequests;
+  private final int maxRequests;
 
-  @Value("${rateLimiter.basePeriod}")
-  private Duration basePeriod;
+  private final Duration basePeriod;
 
   private final Cache<String, Queue<Long>> cache;
 
@@ -40,47 +35,41 @@ public final class SlidingWindowRateLimiter implements RateLimiterStrategy {
   DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm:ss")
       .withZone(ZoneId.systemDefault());
 
-  /**
-   * Constructs a new {@code SlidingWindowRateLimiter} with the provided Caffeine cache.
-   *
-   * @param cache the cache to use for storing request timestamps associated with each client key
-   */
-  public SlidingWindowRateLimiter(Cache<String, Queue<Long>> cache) {
-    this.cache = cache;
-  }
 
-  /**
-   * Validates the rate limiter properties after the class has been constructed.
-   *
-   * <p>This method ensures that the {@code maxRequests} is greater than 0 and that
-   * {@code basePeriod} is not null.
-   * It is annotated with {@code @PostConstruct}, meaning it is executed after the dependency
-   * injection is complete.
-   *
-   * @throws IllegalArgumentException if {@code maxRequests} is less than or equal to 0 or if
-   *                                  {@code basePeriod} is null
-   */
-  @PostConstruct
-  public void validateProperties() {
+  public SlidingWindowRateLimiter(int maxRequests, Duration basePeriod) {
     if (maxRequests <= 0) {
       throw new IllegalArgumentException("maxRequestsPerPeriod must be greater than 0");
     }
     if (basePeriod == null) {
       throw new IllegalArgumentException("basePeriod must be set");
     }
+    this.cache = Caffeine.newBuilder()
+        .expireAfterAccess(basePeriod)
+        .build();
+    this.maxRequests = maxRequests;
+    this.basePeriod = basePeriod;
   }
 
+
   /**
-   * Attempts to allow a request for the given key.
+   * Attempts to allow a request for the given key based on a sliding window rate limiting strategy.
    *
-   * <p>If the number of requests within the sliding window for the key is below the maximum
-   * allowed,
+   * <p>The sliding window rate limiting strategy works by maintaining a queue of timestamps representing
+   * the times of past requests. It calculates the current window based on the configured time period and
+   * allows or denies new requests based on the number of requests within this window. The window "slides"
+   * as time progresses, meaning that outdated timestamps are removed from the queue to reflect the new
+   * window period.
+   *
+   * <p>If the number of requests within the sliding window for the key is below the maximum allowed,
    * the request is allowed, and the current timestamp is recorded. If the limit has been reached, a
-   * {@link RateLimitExceededException} is thrown, indicating that the request cannot be processed
-   * until an earlier timestamp falls out of the sliding window.
+   * {@link RateLimitExceededException} is thrown, indicating that the request cannot be processed until
+   * an earlier timestamp falls out of the sliding window.
+   *
    *
    * @param key the unique key representing the client or request source
-   * @throws RateLimitExceededException if the rate limit for the key has been exceeded
+   * @throws RateLimitExceededException if the rate limit for the key has been exceeded. The exception message
+   * includes the maximum number of allowed requests, the time period for the limit, and the time remaining
+   * until requests can be made again.
    */
   @Override
   public void allowRequest(String key) {
@@ -90,15 +79,19 @@ public final class SlidingWindowRateLimiter implements RateLimiterStrategy {
     synchronized (timestamps) {
       long now = System.currentTimeMillis();
       long oldestAllowedRequestTime = now - basePeriod.toMillis();
-      log.trace("Current time: {}, Oldest allowed request time: {}",
-          formatter.format(Instant.ofEpochMilli(now)),
-          formatter.format(Instant.ofEpochMilli(oldestAllowedRequestTime)));
+      if (log.isTraceEnabled()) {
+        log.trace("Current time: {}, Oldest allowed request time: {}",
+            formatter.format(Instant.ofEpochMilli(now)),
+            formatter.format(Instant.ofEpochMilli(oldestAllowedRequestTime)));
+      }
 
       // Remove outdated timestamps
       while (!timestamps.isEmpty() && oldestAllowedRequestTime > timestamps.peek()) {
         long removedTimestamp = timestamps.poll();
-        log.trace("Removed outdated timestamp: {}",
-            formatter.format(Instant.ofEpochMilli(removedTimestamp)));
+        if (log.isTraceEnabled()) {
+          log.trace("Removed outdated timestamp: {}",
+              formatter.format(Instant.ofEpochMilli(removedTimestamp)));
+        }
       }
 
       if (timestamps.size() < maxRequests) {

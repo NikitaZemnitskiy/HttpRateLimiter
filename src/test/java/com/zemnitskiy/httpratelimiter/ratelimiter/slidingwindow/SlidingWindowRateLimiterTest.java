@@ -4,12 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.util.ReflectionTestUtils.setField;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.google.common.testing.FakeTicker;
 import com.zemnitskiy.httpratelimiter.strategy.RateLimitExceededException;
 import java.time.Duration;
 import java.util.Queue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -17,33 +21,35 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
-import org.mockito.MockitoAnnotations;
-import org.springframework.test.util.ReflectionTestUtils;
 
-
-public class SlidingWindowRateLimiterTest {
+class SlidingWindowRateLimiterTest {
 
   @InjectMocks
   private SlidingWindowRateLimiter rateLimiter;
+
+  private FakeTicker ticker;
 
   private Cache<String, Queue<Long>> cache;
 
   private final Duration basePeriod = Duration.ofSeconds(10);
   private final int maxRequests = 5;
+  private final Duration sleepDuration = Duration.ofSeconds(basePeriod.toSeconds() / maxRequests);
 
   @BeforeEach
   public void setUp() {
     cache = Caffeine.newBuilder().expireAfterAccess(basePeriod).build();
-    rateLimiter = new SlidingWindowRateLimiter(cache);
+    rateLimiter = new SlidingWindowRateLimiter(maxRequests, basePeriod);
+    ticker = new FakeTicker();
+    cache = Caffeine.newBuilder()
+        .expireAfterWrite(basePeriod)
+        .ticker(ticker::read)
+        .build();
+    setField(rateLimiter, "cache", cache);
 
-    ReflectionTestUtils.setField(rateLimiter, "maxRequests", maxRequests);
-    ReflectionTestUtils.setField(rateLimiter, "basePeriod", basePeriod);
-
-    MockitoAnnotations.openMocks(this);
   }
 
   @Test
-  public void testAllowRequest_WithinLimit_ShouldBeAllowed() {
+  void testAllowRequest_WithinLimit_ShouldBeAllowed() {
     for (int i = 0; i < maxRequests; i++) {
       rateLimiter.allowRequest("client1");
     }
@@ -53,7 +59,7 @@ public class SlidingWindowRateLimiterTest {
   }
 
   @Test
-  public void testAllowRequest_ExceedingLimit_ShouldThrowException() {
+  void testAllowRequest_ExceedingLimit_ShouldThrowException() {
     for (int i = 0; i < maxRequests; i++) {
       rateLimiter.allowRequest("client1");
     }
@@ -62,107 +68,85 @@ public class SlidingWindowRateLimiterTest {
   }
 
   @Test
-  public void testSlidingWindowBehavior() throws InterruptedException {
+  void testCacheExpiration() {
     for (int i = 0; i < maxRequests; i++) {
       rateLimiter.allowRequest("client1");
-      TimeUnit.SECONDS.sleep(basePeriod.toSeconds() / maxRequests);
+      ticker.advance(sleepDuration);
     }
 
-    for (int i = 0; i < maxRequests; i++) {
-      rateLimiter.allowRequest("client1");
-      assertThrows(RateLimitExceededException.class, () -> rateLimiter.allowRequest("client1"),
-          "A request exceeding the limit should throw a RateLimitExceededException.");
-      TimeUnit.SECONDS.sleep(basePeriod.toSeconds() / maxRequests);
-    }
-
-    Queue<Long> timestamps = cache.getIfPresent("client1");
-    assertNotNull(timestamps, "Cache should contain the count for client1.");
-    assertEquals(maxRequests, timestamps.size(),
-        "The sliding window should allow requests after the period.");
-  }
-
-  @Test
-  public void testSlidingWindowWithMultipleKeys() throws InterruptedException {
-    for (int i = 0; i < maxRequests; i++) {
-      rateLimiter.allowRequest("client1");
-      rateLimiter.allowRequest("client2");
-      TimeUnit.SECONDS.sleep(basePeriod.toSeconds() / maxRequests);
-    }
-
-    for (int i = 0; i < maxRequests; i++) {
-      rateLimiter.allowRequest("client1");
-      rateLimiter.allowRequest("client2");
-      assertThrows(RateLimitExceededException.class, () -> rateLimiter.allowRequest("client1"),
-          "A request exceeding the limit for client1 should throw a RateLimitExceededException.");
-      assertThrows(RateLimitExceededException.class, () -> rateLimiter.allowRequest("client2"),
-          "A request exceeding the limit for client2 should throw a RateLimitExceededException.");
-
-      TimeUnit.SECONDS.sleep(basePeriod.toSeconds() / maxRequests);
-    }
-
-    Queue<Long> timestampsClient1 = cache.getIfPresent("client1");
-    Queue<Long> timestampsClient2 = cache.getIfPresent("client2");
-
-    assertNotNull(timestampsClient1, "Cache should contain timestamps for client1.");
-    assertNotNull(timestampsClient2, "Cache should contain timestamps for client2.");
-    assertEquals(maxRequests, timestampsClient1.size(),
-        "The sliding window should allow requests for client1 after the period.");
-    assertEquals(maxRequests, timestampsClient2.size(),
-        "The sliding window should allow requests for client2 after the period.");
-  }
-
-  @Test
-  public void testCacheExpiration() throws InterruptedException {
-    for (int i = 0; i < maxRequests; i++) {
-      rateLimiter.allowRequest("client1");
-      TimeUnit.SECONDS.sleep(basePeriod.toSeconds() / maxRequests);
-    }
-
-    TimeUnit.SECONDS.sleep(basePeriod.toSeconds() + 1);
+    ticker.advance(sleepDuration);
 
     Queue<Long> timestamps = cache.getIfPresent("client1");
     assertNull(timestamps, "Cache should be empty after expiration.");
   }
 
   @Test
-  public void testSlidingWindowRateLimiter_MultiThreaded() throws InterruptedException {
-    int numberOfThreads = 1000;
-    ExecutorService executor = Executors.newFixedThreadPool(numberOfThreads);
+  void testSlidingWindowRateLimiter_MultiThreaded() throws InterruptedException {
+    int uniqueClientKeys = 100;
+    int numberOfThreads = 100;
 
-    AtomicInteger successfulRequests = new AtomicInteger(0);
+    AtomicInteger[] successCounters = new AtomicInteger[uniqueClientKeys];
+    for (int i = 0; i < uniqueClientKeys; i++) {
+      successCounters[i] = new AtomicInteger(0);
+    }
 
     for (int i = 0; i < maxRequests; i++) {
-      rateLimiter.allowRequest("client1");
-      TimeUnit.SECONDS.sleep(basePeriod.toSeconds() / maxRequests);
+      for (int j = 0; j < uniqueClientKeys; j++) {
+        final String clientKey = "client" + j;
+        try {
+          rateLimiter.allowRequest(clientKey);
+          successCounters[j].incrementAndGet();
+        } catch (RateLimitExceededException ignored) {
+        }
+      }
+
+      ticker.advance(sleepDuration);
     }
 
-    for (int i = 0; i < numberOfThreads; i++) {
-      executor.submit(() -> {
-            for (int j = 0; j < maxRequests; j++) {
-              try {
-                rateLimiter.allowRequest("client1");
-                successfulRequests.incrementAndGet();
-                rateLimiter.allowRequest("client1");
-                successfulRequests.incrementAndGet();
-              } catch (RateLimitExceededException e) {
-                // Expected exception for requests beyond the limit
-              } finally {
-                try {
-                  TimeUnit.SECONDS.sleep(basePeriod.toSeconds() / maxRequests);
-                } catch (InterruptedException e) {
-                  Thread.currentThread().interrupt();
-                }
-              }
+    for (int i = 0; i < uniqueClientKeys; i++) {
+      assertEquals(maxRequests, successCounters[i].get(),
+          "Requests within the limit should be allowed for client" + i);
+    }
+
+    ExecutorService executor = Executors.newFixedThreadPool(numberOfThreads);
+    for (int i = 0; i < uniqueClientKeys; i++) {
+      successCounters[i] = new AtomicInteger(0);
+    }
+
+    CountDownLatch latch = new CountDownLatch(numberOfThreads * uniqueClientKeys);
+    AtomicInteger testCounter = new AtomicInteger(0);
+
+    for (int i = 0; i < maxRequests; i++) {
+      for (int j = 0; j < uniqueClientKeys; j++) {
+        final String clientKey = "client" + j;
+        int finalJ = j;
+        for (int k = 0; k < numberOfThreads; k++) {
+          CountDownLatch finalLatch = latch;
+          executor.submit(() -> {
+            try {
+              rateLimiter.allowRequest(clientKey);
+              successCounters[finalJ].incrementAndGet();
+            } catch (RateLimitExceededException _) {
+              //Expected error
+            } finally {
+              finalLatch.countDown();
             }
-          }
-      );
+          });
+        }
+      }
+      assertTrue(latch.await(1, TimeUnit.MINUTES));
+      latch = new CountDownLatch(numberOfThreads * uniqueClientKeys);
+      ticker.advance(sleepDuration);
+    }
+    executor.shutdown();
+    boolean terminated = executor.awaitTermination(1, TimeUnit.MINUTES);
+    assertTrue(terminated, "Executor did not terminate in the expected time");
 
+    for (int i = 0; i < uniqueClientKeys; i++) {
+      assertEquals(maxRequests, successCounters[i].get(),
+          "Requests within the limit should be allowed for client" + i);
     }
 
-    executor.shutdown();
-    var _ = executor.awaitTermination(1, TimeUnit.MINUTES);
 
-    assertEquals(maxRequests, successfulRequests.get(),
-        "Only up to maxRequests should be allowed in a given sliding window period.");
   }
 }

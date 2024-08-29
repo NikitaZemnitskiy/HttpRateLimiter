@@ -8,14 +8,13 @@ local currentTime = tonumber(time[1]) * 1000 + tonumber(time[2]) / 1000 -- Curre
 local windowStart = currentTime - windowSize
 
 local removedCount = redis.call("ZREMRANGEBYSCORE", key, 0, windowStart)
-redis.log(redis.LOG_NOTICE, "Removed elements: " .. removedCount)
-
+redis.log(redis.LOG_DEBUG, "Removed elements: " .. removedCount)
 
 local currentCount = redis.call("ZCARD", key)
-redis.log(redis.LOG_NOTICE, "Current time (ms): " .. currentTime)
-redis.log(redis.LOG_NOTICE, "Window start (ms): " .. windowStart)
-redis.log(redis.LOG_NOTICE, "Current count: " .. currentCount)
-redis.log(redis.LOG_NOTICE, "Window size (ms): " .. windowSize)
+redis.log(redis.LOG_DEBUG, "Current time (ms): " .. currentTime)
+redis.log(redis.LOG_DEBUG, "Window start (ms): " .. windowStart)
+redis.log(redis.LOG_DEBUG, "Current count: " .. currentCount)
+redis.log(redis.LOG_DEBUG, "Window size (ms): " .. windowSize)
 
 if currentCount < maxRequests then
     redis.call("ZADD", key, currentTime, currentTime)

@@ -19,26 +19,26 @@ class IpClientKeyTest {
 
 
   @Test
-  public void testGetClientIP_XForwardedFor() {
+  void testGetClientIP_XForwardedFor() {
     Mockito.when(request.getHeader("X-Forwarded-For")).thenReturn("192.168.0.1, 192.168.0.2");
     assertEquals("192.168.0.1", ipClientKey.getClientKey(request));
   }
 
   @Test
-  public void testGetClientIP_XForwardedForSingleIP() {
+  void testGetClientIP_XForwardedForSingleIP() {
     Mockito.when(request.getHeader("X-Forwarded-For")).thenReturn("192.168.0.1");
     assertEquals("192.168.0.1", ipClientKey.getClientKey(request));
   }
 
   @Test
-  public void testGetClientIP_XRealIP() {
+  void testGetClientIP_XRealIP() {
     Mockito.when(request.getHeader("X-Forwarded-For")).thenReturn(null);
     Mockito.when(request.getHeader("X-Real-IP")).thenReturn("192.168.0.3");
     assertEquals("192.168.0.3", ipClientKey.getClientKey(request));
   }
 
   @Test
-  public void testGetClientIP_RemoteAddr() {
+  void testGetClientIP_RemoteAddr() {
     Mockito.when(request.getHeader("X-Forwarded-For")).thenReturn(null);
     Mockito.when(request.getHeader("X-Real-IP")).thenReturn(null);
     Mockito.when(request.getRemoteAddr()).thenReturn("192.168.0.4");
